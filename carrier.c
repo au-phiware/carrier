@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #define	_SYS_SOCKET_H	1
 #include <dlfcn.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -200,6 +201,57 @@ char *prototostr(protocol) {
     return "default";
 }
 
+#define PORTSDB "ports"
+struct sockaddr *getport(struct sockaddr *saddr) {
+    static char addrstr[INET6_ADDRSTRLEN];
+    static unsigned char buf[sizeof(struct in6_addr)];
+    static unsigned char dstportbuf[sizeof(struct sockaddr_in6)];
+    struct sockaddr *dstport = NULL;
+    FILE *portsdb = fopen(PORTSDB, "r");
+    struct sockaddr_in *sinaddr = NULL;
+    struct sockaddr_in6 *sin6addr = NULL;
+    int af = saddr->sa_family;
+
+    switch (af) {
+	case AF_INET:
+	    sinaddr = (struct sockaddr_in *)saddr;
+	    break;
+	case AF_INET6:
+	    sin6addr = (struct sockaddr_in6 *)saddr;
+	    break;
+    }
+
+    if (portsdb) {
+	char *line = NULL;
+	char *word = NULL;
+	size_t n = 0;
+	unsigned short int p;
+	int i;
+	while (getline(&line, &n, portsdb) >= 0) {
+	    if (sscanf(line, "%s%hu%n", addrstr, &p, &i) != 2) continue;
+	    word = line + i;
+	    if (ntohs(sinaddr->sin_port) != p) continue;
+	    if (inet_pton(af, addrstr, buf) != 1) continue;
+	    if (sinaddr->sin_addr.s_addr != ((struct in_addr *)buf)->s_addr) continue;
+
+	    if (sscanf(word, "%s%hu", addrstr, &p) != 2) continue;
+	    if (inet_pton(af, addrstr, buf) != 1) break;
+	    dstport = (struct sockaddr *)&dstportbuf;
+	    dstport->sa_family = AF_INET;
+	    sinaddr = (struct sockaddr_in *)dstport;
+	    sinaddr->sin_port = htons(p);
+	    sinaddr->sin_addr.s_addr = ((struct in_addr *)buf)->s_addr;
+	    break;
+	}
+	free(line);
+	fclose(portsdb);
+    } else {
+	perror("carrier");
+    }
+
+    return dstport;
+}
+
 typedef int (*orig_socket_f_type)(int namespace, int style, int protocol);
 
 int socket(int namespace, int style, int protocol)
@@ -232,7 +284,14 @@ int connect(int socket, struct sockaddr *addr, socklen_t length)
 {
     orig_connect_f_type orig_connect;
     orig_connect = (orig_connect_f_type)dlsym(RTLD_NEXT,"connect");
-    int err = orig_connect(socket, addr, length);
+    struct sockaddr *xaddr = getport(addr);
+    if (xaddr) {
+	printf("Forwarding to %s\n", addrtostr(xaddr, length));
+    } else {
+	xaddr = addr;
+    }
+    int err = orig_connect(socket, xaddr, length);
+
     static char *rtnbuf = "Success";
     char *rtnstr = rtnbuf;
     if (err < 0) {
