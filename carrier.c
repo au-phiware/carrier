@@ -9,8 +9,6 @@
 #include <arpa/inet.h>
 #include <sys/un.h>
 
-typedef int (*orig_socket_f_type)(int namespace, int style, int protocol);
-
 #define PFBUFSIZE 8
 char *pftostr(int namespace) {
     static char defpf[PFBUFSIZE];
@@ -122,7 +120,7 @@ char *addrtostr(struct sockaddr *addr, socklen_t length) {
 		strcpy(defaddr, "AF_INET{");
 		inet_ntop(AF_INET, &(sinaddr->sin_addr), defaddr + 8, ADDRBUFSIZE - 8);
 		size_t sinaddrlen = strlen(defaddr);
-		snprintf(defaddr + sinaddrlen, ADDRBUFSIZE - sinaddrlen, ":%d}", sinaddr->sin_port);
+		snprintf(defaddr + sinaddrlen, ADDRBUFSIZE - sinaddrlen, ":%d}", ntohs(sinaddr->sin_port));
 	    }
 	    break;
 	case AF_INET6:
@@ -131,7 +129,7 @@ char *addrtostr(struct sockaddr *addr, socklen_t length) {
 		strcpy(defaddr, "AF_INET6{");
 		inet_ntop(AF_INET, &(sin6addr->sin6_addr), defaddr + 9, ADDRBUFSIZE - 9);
 		size_t sin6addrlen = strlen(defaddr);
-		snprintf(defaddr + sin6addrlen, ADDRBUFSIZE - sin6addrlen, ":%d}", sin6addr->sin6_port);
+		snprintf(defaddr + sin6addrlen, ADDRBUFSIZE - sin6addrlen, ":%d}", ntohs(sin6addr->sin6_port));
 	    }
 	    break;
 	case AF_LOCAL:
@@ -188,6 +186,8 @@ char *prototostr(protocol) {
     }
     return "default";
 }
+
+typedef int (*orig_socket_f_type)(int namespace, int style, int protocol);
 
 int socket(int namespace, int style, int protocol)
 {
