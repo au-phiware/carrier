@@ -144,6 +144,19 @@ char *addrtostr(struct sockaddr *addr, socklen_t length) {
     return defaddr;
 }
 
+char *sockettostr(int sock) {
+    static char sockbuf[128];
+    static unsigned char addrbuf[sizeof(struct sockaddr_un)];
+    socklen_t length = sizeof(struct sockaddr_un);
+    struct sockaddr *addr = (struct sockaddr *)&addrbuf;
+    if (getsockname(sock, addr, &length) == 0) {
+	snprintf(sockbuf, 128, "fd %d %s", sock, addrtostr(addr, length));
+    } else {
+	snprintf(sockbuf, 8, "fd %d", sock);
+    }
+    return sockbuf;
+}
+
 int _styletostr(char *str, size_t n, int style) {
     switch (style) {
 	case SOCK_STREAM:	strncpy(str, "SOCK_STREAM", n);		return n - 11;
@@ -194,12 +207,11 @@ int socket(int namespace, int style, int protocol)
     orig_socket_f_type orig_socket;
     orig_socket = (orig_socket_f_type)dlsym(RTLD_NEXT,"socket");
     int sock = orig_socket(namespace, style, protocol);
-    static char rtnbuf[8];
-    char *rtnstr = rtnbuf;
+    char *rtnstr;
     if (sock < 0) {
 	rtnstr = strerror(errno);
     } else {
-	snprintf(rtnbuf, 8, "fd %d", sock);
+	rtnstr = sockettostr(sock);
     }
     printf("socket(%s, %s, %s) -> %s\n", pftostr(namespace), styletostr(style), prototostr(protocol), rtnstr);
     return sock;
@@ -226,7 +238,8 @@ int connect(int socket, struct sockaddr *addr, socklen_t length)
     if (err < 0) {
 	rtnstr = strerror(errno);
     }
-    printf("connect(fd %d, %s) -> %s\n", socket, addrtostr(addr, length), rtnstr);
+    printf("connect(%s, ", sockettostr(socket));
+    printf("%s) -> %s\n", addrtostr(addr, length), rtnstr);
     return err;
 }
 
